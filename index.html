@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Juego del Impostor — Corregido</title>
+<style>
+  :root{ --accent:#1e88e5; --muted:#666; }
+  html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif;background:#f5f6f8}
+  .wrap{max-width:760px;margin:18px auto;padding:18px}
+  h1{text-align:center;margin:0 0 12px}
+  .card{background:#fff;padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06);margin-bottom:14px}
+  .block{display:block;margin-bottom:10px;font-weight:600}
+  .big-select, .big-input { width:100%; font-size:1.4rem; padding:12px; border-radius:10px; border:1px solid #ddd; box-sizing:border-box; margin-bottom:12px; }
+  .categories { font-size:1.05rem; line-height:1.6; margin-bottom:12px; }
+  .btn { display:block; width:100%; padding:14px; font-size:1.1rem; background:var(--accent); color:#fff; border:0; border-radius:10px; cursor:pointer }
+  .btn:active { transform:scale(.99); }
+  .players-list { display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+  .player-row { display:flex; gap:8px; align-items:center; }
+  .player-row input[type="text"]{ flex:1; padding:10px; font-size:1.05rem; border-radius:8px; border:1px solid #ddd }
+  .word-btn { padding:10px 12px; font-size:1.02rem; border-radius:8px; border:2px solid var(--accent); background:#fff; cursor:pointer }
+  .word-btn:active{ transform:scale(.97); }
+  #wordCard { margin:12px auto; padding:14px; width:95%; max-width:420px; text-align:center; font-size:1.45rem; border-radius:10px; border:2px solid #222; background:#fff; display:none; }
+  .votes { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .vote-btn { padding:10px 12px; border-radius:8px; border:2px solid #444; background:#fff; cursor:pointer; }
+  .vote-btn:active{ transform:scale(.97); }
+  .muted{ color:var(--muted); font-size:0.95rem; margin-top:8px; }
+  @media (max-width:420px){ .big-select,.big-input{ font-size:1.6rem; padding:16px } .word-btn{ font-size:1.12rem; padding:12px 14px } .player-row input[type="text"]{ font-size:1.1rem; padding:12px } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>¿Quién es el Impostor?</h1>
+
+    <!-- SETUP -->
+    <div class="card" id="setupCard">
+      <label class="block">Seleccioná categorías</label>
+      <div class="categories" id="categoriesBlock">
+        <label><input type="checkbox" value="animales"> Animales</label><br>
+        <label><input type="checkbox" value="comidas"> Comidas</label><br>
+        <label><input type="checkbox" value="objetos"> Objetos</label><br>
+        <label><input type="checkbox" value="videojuegos"> Videojuegos</label><br>
+        <label><input type="checkbox" value="trabajos"> Trabajos / Oficios</label><br>
+        <label><input type="checkbox" value="paises"> Países</label><br>
+        <label><input type="checkbox" value="deportes"> Deportes</label><br>
+        <label><input type="checkbox" value="escuela"> Escuela</label><br>
+        <label><input type="checkbox" value="personalizado"> Personalizado</label>
+      </div>
+
+      <label class="block">Cantidad de jugadores</label>
+      <select id="playersSelect" class="big-select" aria-label="Cantidad de jugadores"></select>
+
+      <label class="block">Cantidad de impostores</label>
+      <select id="impostorsSelect" class="big-select" aria-label="Cantidad de impostores"></select>
+
+      <label class="block">Modo del impostor</label>
+      <select id="impostorMode" class="big-select">
+        <option value="question">Palabra "?"</option>
+        <option value="similar">Palabra distinta pero relacionada</option>
+      </select>
+
+      <button id="startBtn" class="btn">Iniciar partida</button>
+      <div class="muted">En celular: tocá los selects grandes para elegir fácilmente.</div>
+    </div>
+
+    <!-- PLAY -->
+    <div class="card" id="playCard" style="display:none;">
+      <div class="muted">Ronda <span id="roundNumber">0</span></div>
+
+      <div id="playersContainer" class="players-list"></div>
+
+      <div id="wordCard"></div>
+
+      <div style="margin-top:12px">
+        <div class="muted">Votar al impostor</div>
+        <div id="votesArea" class="votes"></div>
+        <div id="voteResult" class="muted"></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <button id="nextRoundBtn" class="btn" style="display:none">Siguiente ronda</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- WORD POOLS ---------- */
+const WORD_SETS = {
+  animales: ["gato","perro","elefante","zorro","loro","vaca","caballo","tortuga","mono","pato","oso","jirafa","conejo","raton","delfin"],
+  comidas: ["pizza","asado","empanada","hamburguesa","pancho","arroz","fideos","sushi","milanesa","helado","torta","arepa","choripan","locro","tarta"],
+  objetos: ["mesa","silla","celular","televisor","ventilador","lapicera","cuchillo","cama","puerta","mochila","reloj","teclado","auriculares","bolso","bateria"],
+  videojuegos: ["lol","pvz","csgo","genshin impact","clash royale","minecraft","fortnite","roblox","gta v","fifa","elden ring","halo","valorant","pubg","brawl stars"],
+  trabajos: ["doctor","bombero","policia","profesor","albanil","plomero","electricista","ingeniero","carpintero","panadero","cajero","taxista","mecanico"],
+  paises: ["argentina","brasil","chile","uruguay","paraguay","bolivia","peru","mexico","espana","italia","francia","alemania","japon"],
+  deportes: ["futbol","basquet","tenis","voley","natacion","hockey","rugby","handball","boxeo","ciclismo","golf"],
+  escuela: ["pizarron","tiza","carpeta","cuaderno","mochila","recreo","profesor","banco","regla","proyector"],
+  personalizado: []
+};
+
+/* mapa manual de palabras relacionadas (palabra principal -> palabra relacionada) */
+const SIMILAR_MAP = {
+  gato:"tigre", perro:"lobo", elefante:"mamut", zorro:"coyote",
+  pizza:"fugazzeta", empanada:"tarta", hamburguesa:"sandwich",
+  "minecraft":"terraria","csgo":"valorant","fortnite":"apex",
+  celular:"tablet", lapicera:"lapiz", argentina:"uruguay", brasil:"colombia",
+  futbol:"futsal", rugby:"handball", profesor:"maestro", cuaderno:"libreta"
+};
+
+/* ---------- GAME STATE ---------- */
+let playersCount = 4, impostorsCount = 1, impostorMode = "question";
+let players = [];       // [{name:"Jugador X"}]
+let roles = [];         // array of strings (main word or impostor word)
+let poolWords = [];     // combined pool
+let lastWords = [];     // last 5 main words
+let lastImpostors = []; // last 5 impostor indices
+let roundNum = 0;
+let currentTurn = 0;    // who should press next
+let roundMainWord = ""; // current main word
+
+/* ---------- UI refs ---------- */
+const playersSelect = document.getElementById("playersSelect");
+const impostorsSelect = document.getElementById("impostorsSelect");
+const startBtn = document.getElementById("startBtn");
+const playCard = document.getElementById("playCard");
+const setupCard = document.getElementById("setupCard");
+const playersContainer = document.getElementById("playersContainer");
+const wordCard = document.getElementById("wordCard");
+const votesArea = document.getElementById("votesArea");
+const voteResult = document.getElementById("voteResult");
+const nextRoundBtn = document.getElementById("nextRoundBtn");
+const roundNumberSpan = document.getElementById("roundNumber");
+
+/* ---------- fill selects ---------- */
+function fillSelects(){
+  playersSelect.innerHTML = "";
+  for(let i=3;i<=12;i++){
+    const o=document.createElement("option"); o.value=i; o.textContent=i;
+    if(i===4) o.selected=true;
+    playersSelect.appendChild(o);
+  }
+  impostorsSelect.innerHTML = "";
+  for(let j=1;j<=4;j++){ const o=document.createElement("option"); o.value=j; o.textContent=j; impostorsSelect.appendChild(o); }
+}
+fillSelects();
+
+/* ---------- Utils ---------- */
+function pickFrom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function escapeHtml(s){ return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
+function flash(el,txt){ const orig=el.textContent; el.textContent=txt; el.style.opacity=.6; setTimeout(()=>{ el.textContent=orig; el.style.opacity=""; },900); }
+
+/* ---------- Random no repetir palabra 5 rondas ---------- */
+function pickMainWord(){
+  if(poolWords.length===0) return "";
+  let tries=0, w;
+  do{
+    w = pickFrom(poolWords);
+    tries++;
+    if(tries>60) break;
+  } while(lastWords.includes(w));
+  lastWords.push(w);
+  if(lastWords.length>5) lastWords.shift();
+  return w;
+}
+
+/* ---------- Elegir impostores sin repetir últimos 5 ---------- */
+function pickImpostorIndices(nPlayers, nImpostors){
+  const chosen=[];
+  let attempts=0;
+  while(chosen.length<nImpostors && attempts<300){
+    attempts++;
+    const cand = Math.floor(Math.random()*nPlayers);
+    if(chosen.includes(cand)) continue;
+    if(lastImpostors.includes(cand)) continue;
+    chosen.push(cand);
+  }
+  // si no alcanzó (pocos jugadores), completar permitiendo repetidos
+  while(chosen.length<nImpostors){
+    const cand=Math.floor(Math.random()*nPlayers);
+    if(!chosen.includes(cand)) chosen.push(cand);
+  }
+  // guardar en historial
+  chosen.forEach(i=> lastImpostors.push(i));
+  while(lastImpostors.length>5) lastImpostors.shift();
+  return chosen;
+}
+
+/* ---------- Render players UI (inputs + Ver palabra) ---------- */
+function renderPlayers(){
+  playersContainer.innerHTML = "";
+  players.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "player-row";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = p.name;
+    input.id = "name_" + i;
+    input.addEventListener("input", ()=> players[i].name = input.value.trim() || ("Jugador "+(i+1)));
+
+    const btn = document.createElement("button");
+    btn.className = "word-btn";
+    btn.textContent = "Ver palabra";
+    btn.onclick = ()=> handlePlayerClick(i, btn);
+
+    row.appendChild(input);
+    row.appendChild(btn);
+    playersContainer.appendChild(row);
+  });
+}
+
+/* ---------- Handle player button click: show/hide and advance ---------- */
+function handlePlayerClick(index, btn){
+  // sólo puede ver quien sea currentTurn (control de flujo)
+  if(index !== currentTurn){
+    flash(btn, "No es tu turno");
+    return;
+  }
+
+  // si wordCard está oculto o pertenece a otro jugador -> mostrar
+  if(wordCard.style.display === "none" || wordCard.dataset.player !== String(index)){
+    const name = players[index].name || ("Jugador " + (index+1));
+    wordCard.innerHTML = `<strong>${escapeHtml(name)}</strong><div style="margin-top:8px; font-size:1.2rem;">${escapeHtml(roles[index])}</div>`;
+    wordCard.style.display = "block";
+    wordCard.dataset.player = String(index);
+    btn.style.transform = "scale(.97)"; setTimeout(()=> btn.style.transform = "", 150);
+  } else {
+    // ocultar y pasar al siguiente
+    wordCard.style.display = "none";
+    wordCard.dataset.player = "";
+    currentTurn = (currentTurn + 1) % players.length;
+  }
+}
+
+/* ---------- render vote buttons ---------- */
+function renderVotes(){
+  votesArea.innerHTML = "";
+  players.forEach((p,i)=>{
+    const b = document.createElement("button");
+    b.className = "vote-btn";
+    b.textContent = p.name || ("Jugador "+(i+1));
+    b.onclick = ()=> handleVote(i);
+    votesArea.appendChild(b);
+  });
+  voteResult.innerHTML = "";
+}
+
+/* ---------- handle vote ---------- */
+function handleVote(i){
+  if(typeof roundMainWord === "undefined" || roundMainWord === "") { voteResult.innerHTML = "Error: ronda no inicializada"; return; }
+  if(roles[i] !== roundMainWord){
+    voteResult.innerHTML = `✔ <strong>${escapeHtml(players[i].name)}</strong> ERA el impostor. Ganaron.`;
+    nextRoundBtn.style.display = "inline-block";
+  } else {
+    voteResult.innerHTML = `❌ <strong>${escapeHtml(players[i].name)}</strong> NO era el impostor. El juego sigue...`;
+  }
+}
+
+/* ---------- NEXT ROUND / START ROUNDS ---------- */
+nextRoundBtn.addEventListener("click", ()=> {
+  startRound(); // nueva ronda con mismas configuraciones
+});
+
+/* ---------- Start the whole match (from setup) ---------- */
+startBtn.addEventListener("click", ()=> {
+  // read options
+  playersCount = parseInt(playersSelect.value,10);
+  impostorsCount = parseInt(impostorsSelect.value,10);
+  impostorMode = document.getElementById("impostorMode").value;
+
+  // categories
+  const checked = [...document.querySelectorAll("#categoriesBlock input[type=checkbox]:checked")].map(i=>i.value);
+  if(checked.length === 0){ alert("Seleccioná al menos una categoría."); return; }
+
+  // build pool
+  poolWords = [];
+  checked.forEach(cat => { if(Array.isArray(WORD_SETS[cat])) poolWords = poolWords.concat(WORD_SETS[cat]); });
+  if(poolWords.length === 0){ alert("Pool vacío. Revisá categorías."); return; }
+
+  // create players
+  players = [];
+  for(let i=0;i<playersCount;i++) players.push({ name: "Jugador "+(i+1) });
+
+  // reset round state
+  roundNum = 0; lastWords = lastWords || []; lastImpostors = lastImpostors || [];
+
+  // hide setup show play
+  setupCard.style.display = "none";
+  playCard.style.display = "block";
+
+  startRound();
+});
+
+/* ---------- startRound: creates mainWord, impostors, roles, UI ---------- */
+function startRound(){
+  roundNum++; roundNumberSpan.textContent = roundNum;
+
+  // pick main word without repeating lastWords
+  roundMainWord = pickMainWord();
+  if(!roundMainWord){ alert("No se pudo elegir palabra. Revisá pool."); return; }
+
+  // pick impostors indices respecting lastImpostors
+  const impostorIndices = pickImpostorIndices(players.length, Math.min(impostorsCount, players.length-1));
+
+  // assign roles
+  roles = Array(players.length).fill(roundMainWord);
+  // impostor word depending on mode:
+  const impostorWord = (document.getElementById("impostorMode").value === "similar")
+    ? (SIMILAR_MAP[roundMainWord] || roundMainWord + " (relacionado)")
+    : "?";
+
+  impostorIndices.forEach(i => roles[i] = impostorWord);
+
+  // reset turn & UI
+  currentTurn = 0;
+  wordCard.style.display = "none";
+  wordCard.dataset.player = "";
+  nextRoundBtn.style.display = "none";
+  voteResult.innerHTML = "";
+
+  // render players and votes
+  renderPlayers();
+  renderVotes();
+}
+
+/* ---------- pickMainWord wrapper (uses poolWords and lastWords) ---------- */
+function pickMainWord(){
+  if(!Array.isArray(poolWords) || poolWords.length===0) return "";
+  let tries=0, w;
+  do {
+    w = pickFrom(poolWords);
+    tries++;
+    if(tries>80) break;
+  } while(lastWords.includes(w));
+  lastWords.push(w);
+  if(lastWords.length>5) lastWords.shift();
+  return w;
+}
+
+/* ---------- Helpers ---------- */
+function pickFrom(a){ return a[Math.floor(Math.random()*a.length)]; }
+
+/* ---------- fill players/impostors default selects on load ---------- */
+(function init(){
+  // populate players/impostors selects already done earlier, but ensure values
+  document.getElementById("playersSelect").value = 4;
+  document.getElementById("impostorsSelect").value = 1;
+})();
+
+</script>
+</body>
+</html>
